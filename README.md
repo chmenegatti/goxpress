@@ -34,7 +34,7 @@ Roadmap:
 - [x] Middleware chain (+ `net/http` adapter)
 - [x] Route groups & sub-router mounting
 - [x] Centralized error handling & recovery
-- [ ] Request binding & rendering
+- [x] Request binding & rendering
 - [ ] Built-in middleware suite
 - [ ] Docs & examples
 

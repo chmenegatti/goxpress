@@ -2,6 +2,7 @@ package goxpress
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 // MIME types used by the response helpers.
 const (
 	MIMEJSON  = "application/json; charset=utf-8"
+	MIMEXML   = "application/xml; charset=utf-8"
 	MIMEText  = "text/plain; charset=utf-8"
 	MIMEHTML  = "text/html; charset=utf-8"
 	MIMEBytes = "application/octet-stream"
@@ -216,6 +218,14 @@ func (c *Context) JSON(code int, v any) error {
 	c.Writer.Header().Set("Content-Type", MIMEJSON)
 	c.Writer.WriteHeader(code)
 	return json.NewEncoder(c.Writer).Encode(v)
+}
+
+// XML serializes v as XML, sets the Content-Type and writes it with the given
+// status code.
+func (c *Context) XML(code int, v any) error {
+	c.Writer.Header().Set("Content-Type", MIMEXML)
+	c.Writer.WriteHeader(code)
+	return xml.NewEncoder(c.Writer).Encode(v)
 }
 
 // String writes a formatted plain-text response with the given status code.
