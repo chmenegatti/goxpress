@@ -30,7 +30,7 @@ Roadmap:
 
 - [x] Project scaffold & CI
 - [x] Radix-tree routing engine
-- [ ] Request `Context` & response helpers
+- [x] Request `Context` & response helpers
 - [ ] Middleware chain (+ `net/http` adapter)
 - [ ] Route groups & sub-router mounting
 - [ ] Centralized error handling & recovery
