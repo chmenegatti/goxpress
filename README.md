@@ -35,7 +35,7 @@ Roadmap:
 - [x] Route groups & sub-router mounting
 - [x] Centralized error handling & recovery
 - [x] Request binding & rendering
-- [ ] Built-in middleware suite
+- [x] Built-in middleware suite
 - [ ] Docs & examples
 
 ## Install
