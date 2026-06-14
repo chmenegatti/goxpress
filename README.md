@@ -29,7 +29,7 @@ radix-tree engine, while staying **100% compatible with the standard
 Roadmap:
 
 - [x] Project scaffold & CI
-- [ ] Radix-tree routing engine
+- [x] Radix-tree routing engine
 - [ ] Request `Context` & response helpers
 - [ ] Middleware chain (+ `net/http` adapter)
 - [ ] Route groups & sub-router mounting
