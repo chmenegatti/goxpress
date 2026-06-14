@@ -16,6 +16,10 @@ type Router struct {
 	// trees maps an HTTP method to the root of its radix tree.
 	trees map[string]*node
 
+	// middleware holds the global middleware applied to every route registered
+	// after the middleware was added.
+	middleware []HandlerFunc
+
 	// pool recycles Context values across requests to avoid per-request
 	// allocations on the hot path.
 	pool sync.Pool
@@ -71,11 +75,27 @@ func (r *Router) Handle(method, path string, handlers ...HandlerFunc) {
 		root = &node{}
 		r.trees[method] = root
 	}
-	root.addRoute(path, handlers)
+	root.addRoute(path, r.compose(handlers))
 
 	if c := countParams(path); c > r.maxParams {
 		r.maxParams = c
 	}
+}
+
+// Use registers global middleware. Middleware runs, in registration order,
+// before the handlers of every route declared afterwards. Calling Use after a
+// route has been registered does not affect that route.
+func (r *Router) Use(middleware ...HandlerFunc) {
+	r.middleware = append(r.middleware, middleware...)
+}
+
+// compose returns a fresh chain consisting of the current global middleware
+// followed by handlers, so later mutations to either slice cannot alias it.
+func (r *Router) compose(handlers []HandlerFunc) []HandlerFunc {
+	chain := make([]HandlerFunc, 0, len(r.middleware)+len(handlers))
+	chain = append(chain, r.middleware...)
+	chain = append(chain, handlers...)
+	return chain
 }
 
 // Get registers handlers for the GET method.
@@ -134,7 +154,7 @@ func (r *Router) dispatch(c *Context) {
 		res := root.getValue(path, c.params)
 		if res.handlers != nil {
 			c.params = res.params
-			r.run(c, res.handlers)
+			r.runChain(c, res.handlers)
 			return
 		}
 
@@ -147,34 +167,35 @@ func (r *Router) dispatch(c *Context) {
 	// The path may exist for other methods (405) rather than not at all (404).
 	if allowed := r.allowedMethods(path, method); len(allowed) > 0 {
 		c.Writer.Header().Set("Allow", strings.Join(allowed, ", "))
-		r.handleError(c, r.MethodNotAllowed, http.StatusMethodNotAllowed)
+		r.runChain(c, r.compose([]HandlerFunc{r.notFoundHandler(http.StatusMethodNotAllowed, r.MethodNotAllowed)}))
 		return
 	}
 
-	r.handleError(c, r.NotFound, http.StatusNotFound)
+	r.runChain(c, r.compose([]HandlerFunc{r.notFoundHandler(http.StatusNotFound, r.NotFound)}))
 }
 
-// run executes a handler chain in order, stopping at the first error. Rich
-// middleware flow control (Next/Abort) is layered on in a later stage; for now
-// an error aborts the chain and yields a 500 response.
-func (r *Router) run(c *Context, handlers []HandlerFunc) {
-	for _, h := range handlers {
-		if err := h(c); err != nil {
-			http.Error(c.Writer, http.StatusText(http.StatusInternalServerError),
-				http.StatusInternalServerError)
-			return
-		}
+// runChain executes a composed handler chain through Context.Next. When a
+// handler returns an error and nothing has been written yet, a plain 500 is
+// sent; the centralized error handler introduced later replaces this fallback.
+func (r *Router) runChain(c *Context, handlers []HandlerFunc) {
+	c.handlers = handlers
+	c.index = -1
+	if err := c.Next(); err != nil && !c.Writer.Written() {
+		http.Error(c.Writer, http.StatusText(http.StatusInternalServerError),
+			http.StatusInternalServerError)
 	}
 }
 
-// handleError invokes a user-supplied handler when present, otherwise writes a
-// plain status response with the given code.
-func (r *Router) handleError(c *Context, h HandlerFunc, code int) {
+// notFoundHandler returns the user-supplied handler when set, otherwise a
+// handler that writes a plain status response with the given code.
+func (r *Router) notFoundHandler(code int, h HandlerFunc) HandlerFunc {
 	if h != nil {
-		_ = h(c)
-		return
+		return h
 	}
-	http.Error(c.Writer, http.StatusText(code), code)
+	return func(c *Context) error {
+		http.Error(c.Writer, http.StatusText(code), code)
+		return nil
+	}
 }
 
 // allowedMethods returns the methods, other than the excluded one, that have a

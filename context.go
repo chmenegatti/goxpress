@@ -39,12 +39,25 @@ type Context struct {
 	// params holds the URL parameters captured for the matched route.
 	params Params
 
+	// handlers is the chain (middleware followed by the route handler) being
+	// executed for the current request.
+	handlers []HandlerFunc
+
+	// index is the position of the currently executing handler within the
+	// chain. It starts at -1 before the first Next advances it.
+	index int
+
 	// queryCache memoizes the parsed URL query across repeated lookups.
 	queryCache url.Values
 
 	// store holds arbitrary request-scoped values shared between handlers.
 	store map[string]any
 }
+
+// abortIndex is well past any realistic chain length; setting index to it stops
+// the chain from advancing. It stays clear of integer overflow so the trailing
+// index++ in Next cannot wrap around.
+const abortIndex = 1 << 30
 
 // reset prepares a Context for reuse with a new request, clearing any state
 // carried over from a previous one. It backs the router's Context pool.
@@ -53,8 +66,49 @@ func (c *Context) reset(w http.ResponseWriter, r *http.Request) {
 	c.Writer = &c.writer
 	c.Request = r
 	c.params = c.params[:0]
+	c.handlers = nil
+	c.index = -1
 	c.queryCache = nil
 	clear(c.store)
+}
+
+// ---------------------------------------------------------------------------
+// Middleware flow control
+// ---------------------------------------------------------------------------
+
+// Next runs the remaining handlers in the chain. Middleware calls Next to
+// invoke downstream handlers and regain control afterwards; code before the
+// Next call runs on the way in, code after it runs on the way out.
+//
+// Execution stops at the first handler that returns a non-nil error, which Next
+// returns to its caller and ultimately to the router's error handler.
+func (c *Context) Next() error {
+	c.index++
+	for c.index < len(c.handlers) {
+		if err := c.handlers[c.index](c); err != nil {
+			return err
+		}
+		c.index++
+	}
+	return nil
+}
+
+// Abort prevents any not-yet-executed handlers in the chain from running. It
+// does not interrupt the current handler, which should return after calling
+// Abort.
+func (c *Context) Abort() {
+	c.index = abortIndex
+}
+
+// AbortWithStatus aborts the chain and writes the given status code.
+func (c *Context) AbortWithStatus(code int) {
+	c.Abort()
+	c.Writer.WriteHeader(code)
+}
+
+// IsAborted reports whether the chain has been aborted.
+func (c *Context) IsAborted() bool {
+	return c.index >= abortIndex
 }
 
 // ---------------------------------------------------------------------------
