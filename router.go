@@ -2,6 +2,7 @@ package goxpress
 
 import (
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 )
@@ -40,6 +41,15 @@ type Router struct {
 	// MethodNotAllowed handles requests whose path exists for other methods
 	// but not the requested one. When nil, a plain 405 response is sent.
 	MethodNotAllowed HandlerFunc
+
+	// ErrorHandler renders responses for errors returned by, or panics
+	// recovered from, the handler chain. Defaults to DefaultErrorHandler.
+	ErrorHandler ErrorHandler
+
+	// Recovery, when true (the default), recovers panics in the handler chain
+	// and routes them through ErrorHandler as a *PanicError instead of letting
+	// them crash the server.
+	Recovery bool
 }
 
 // New creates a Router with sensible defaults.
@@ -47,6 +57,8 @@ func New() *Router {
 	r := &Router{
 		trees:                 make(map[string]*node),
 		RedirectTrailingSlash: true,
+		ErrorHandler:          DefaultErrorHandler,
+		Recovery:              true,
 	}
 	r.pool.New = func() any {
 		return &Context{params: make(Params, 0, r.maxParams)}
@@ -174,16 +186,34 @@ func (r *Router) dispatch(c *Context) {
 	r.runChain(c, r.compose([]HandlerFunc{r.notFoundHandler(http.StatusNotFound, r.NotFound)}))
 }
 
-// runChain executes a composed handler chain through Context.Next. When a
-// handler returns an error and nothing has been written yet, a plain 500 is
-// sent; the centralized error handler introduced later replaces this fallback.
+// runChain executes a composed handler chain through Context.Next. Errors
+// returned by the chain, and (when Recovery is enabled) panics raised within
+// it, are routed through ErrorHandler.
 func (r *Router) runChain(c *Context, handlers []HandlerFunc) {
 	c.handlers = handlers
 	c.index = -1
-	if err := c.Next(); err != nil && !c.Writer.Written() {
-		http.Error(c.Writer, http.StatusText(http.StatusInternalServerError),
-			http.StatusInternalServerError)
+
+	if r.Recovery {
+		defer r.recover(c)
 	}
+
+	if err := c.Next(); err != nil {
+		r.ErrorHandler(c, err)
+	}
+}
+
+// recover converts a panic in the handler chain into a *PanicError and routes
+// it through ErrorHandler. http.ErrAbortHandler is re-raised so the standard
+// server can handle connection abortion as usual.
+func (r *Router) recover(c *Context) {
+	rec := recover()
+	if rec == nil {
+		return
+	}
+	if rec == http.ErrAbortHandler {
+		panic(rec)
+	}
+	r.ErrorHandler(c, &PanicError{Value: rec, Stack: debug.Stack()})
 }
 
 // notFoundHandler returns the user-supplied handler when set, otherwise a

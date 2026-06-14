@@ -33,7 +33,7 @@ Roadmap:
 - [x] Request `Context` & response helpers
 - [x] Middleware chain (+ `net/http` adapter)
 - [x] Route groups & sub-router mounting
-- [ ] Centralized error handling & recovery
+- [x] Centralized error handling & recovery
 - [ ] Request binding & rendering
 - [ ] Built-in middleware suite
 - [ ] Docs & examples
