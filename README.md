@@ -32,7 +32,7 @@ Roadmap:
 - [x] Radix-tree routing engine
 - [x] Request `Context` & response helpers
 - [x] Middleware chain (+ `net/http` adapter)
-- [ ] Route groups & sub-router mounting
+- [x] Route groups & sub-router mounting
 - [ ] Centralized error handling & recovery
 - [ ] Request binding & rendering
 - [ ] Built-in middleware suite
