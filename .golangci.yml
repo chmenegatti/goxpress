@@ -16,6 +16,13 @@ linters:
     - revive
     - unconvert
     - prealloc
+  exclusions:
+    rules:
+      # Handlers and middleware must keep the *Context parameter even when a
+      # given handler does not use it; revive's unused-parameter fights that.
+      - linters:
+          - revive
+        text: "unused-parameter"
 
 issues:
   max-issues-per-linter: 0

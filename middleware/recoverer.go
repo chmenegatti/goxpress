@@ -44,9 +44,9 @@ func RecovererWithConfig(cfg RecovererConfig) goxpress.HandlerFunc {
 				panic(rec)
 			}
 
-			fmt.Fprintf(cfg.Output, "[goxpress] panic recovered: %v\n", rec)
+			_, _ = fmt.Fprintf(cfg.Output, "[goxpress] panic recovered: %v\n", rec)
 			if cfg.StackTrace {
-				cfg.Output.Write(debug.Stack())
+				_, _ = cfg.Output.Write(debug.Stack())
 			}
 
 			if !c.Writer.Written() {

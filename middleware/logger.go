@@ -47,7 +47,7 @@ func LoggerWithConfig(cfg LoggerConfig) goxpress.HandlerFunc {
 			status = 200
 		}
 
-		fmt.Fprintf(cfg.Output, "[goxpress] %s | %3d | %12s | %-7s %s\n",
+		_, _ = fmt.Fprintf(cfg.Output, "[goxpress] %s | %3d | %12s | %-7s %s\n",
 			start.Format("2006/01/02 - 15:04:05"),
 			status,
 			latency,
