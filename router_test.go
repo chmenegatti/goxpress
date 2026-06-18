@@ -145,6 +145,117 @@ func TestRouterPanicsOnBadRegistration(t *testing.T) {
 	}
 }
 
+func TestRouterAutoHEAD(t *testing.T) {
+	r := New()
+	r.Get("/page", func(c *Context) error {
+		c.SetHeader("X-Custom", "yes")
+		return c.String(http.StatusOK, "body content")
+	})
+
+	w := serve(r, http.MethodHead, "/page")
+	if w.Code != http.StatusOK {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusOK)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty", w.Body.String())
+	}
+	if got := w.Header().Get("X-Custom"); got != "yes" {
+		t.Errorf("X-Custom = %q, want %q", got, "yes")
+	}
+	if got := w.Header().Get("Content-Type"); got != MIMEText {
+		t.Errorf("Content-Type = %q, want %q", got, MIMEText)
+	}
+}
+
+func TestRouterExplicitHEADWins(t *testing.T) {
+	r := New()
+	r.Get("/page", func(c *Context) error { return c.String(http.StatusOK, "get") })
+	r.Head("/page", func(c *Context) error { return c.Status(http.StatusTeapot).NoContent(http.StatusTeapot) })
+
+	w := serve(r, http.MethodHead, "/page")
+	if w.Code != http.StatusTeapot {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusTeapot)
+	}
+}
+
+func TestRouterHEADDisabled(t *testing.T) {
+	r := New()
+	r.HandleHEAD = false
+	r.Get("/page", func(c *Context) error { return c.String(http.StatusOK, "get") })
+
+	w := serve(r, http.MethodHead, "/page")
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestRouterAutoOPTIONS(t *testing.T) {
+	r := New()
+	r.Get("/resource", func(*Context) error { return nil })
+	r.Post("/resource", func(*Context) error { return nil })
+	r.Delete("/resource", func(*Context) error { return nil })
+
+	w := serve(r, http.MethodOptions, "/resource")
+	if w.Code != http.StatusNoContent {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusNoContent)
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("body = %q, want empty", w.Body.String())
+	}
+	// Sorted: DELETE, GET, HEAD (implied by GET), OPTIONS, POST.
+	want := "DELETE, GET, HEAD, OPTIONS, POST"
+	if got := w.Header().Get("Allow"); got != want {
+		t.Errorf("Allow = %q, want %q", got, want)
+	}
+}
+
+func TestRouterExplicitOPTIONSWins(t *testing.T) {
+	r := New()
+	r.Get("/resource", func(*Context) error { return nil })
+	r.Options("/resource", func(c *Context) error { return c.String(http.StatusOK, "custom") })
+
+	w := serve(r, http.MethodOptions, "/resource")
+	if w.Code != http.StatusOK || w.Body.String() != "custom" {
+		t.Errorf("code = %d body = %q, want 200 %q", w.Code, w.Body.String(), "custom")
+	}
+}
+
+func TestRouterOPTIONSDisabled(t *testing.T) {
+	r := New()
+	r.HandleOPTIONS = false
+	r.Get("/resource", func(*Context) error { return nil })
+
+	w := serve(r, http.MethodOptions, "/resource")
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestRouterOPTIONSUnknownPath(t *testing.T) {
+	r := New()
+	r.Get("/resource", func(*Context) error { return nil })
+
+	w := serve(r, http.MethodOptions, "/missing")
+	if w.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestRouterAllowHeaderSorted(t *testing.T) {
+	r := New()
+	r.Get("/resource", func(*Context) error { return nil })
+	r.Put("/resource", func(*Context) error { return nil })
+
+	w := serve(r, http.MethodPost, "/resource")
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("code = %d, want %d", w.Code, http.StatusMethodNotAllowed)
+	}
+	want := "GET, HEAD, OPTIONS, PUT"
+	if got := w.Header().Get("Allow"); got != want {
+		t.Errorf("Allow = %q, want %q", got, want)
+	}
+}
+
 func BenchmarkRouterStatic(b *testing.B) {
 	r := New()
 	r.Get("/users/profile/settings", func(*Context) error { return nil })
