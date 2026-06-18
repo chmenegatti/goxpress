@@ -42,6 +42,8 @@ func (r *Router) ListenAndServe(addr string) error {
 // stops on its own, then drains in-flight requests within the configured
 // timeout. It is the testable core shared by ListenAndServe.
 func (r *Router) serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
+	r.printBanner(os.Stdout, ln.Addr().String())
+
 	errc := make(chan error, 1)
 	go func() {
 		err := srv.Serve(ln)
