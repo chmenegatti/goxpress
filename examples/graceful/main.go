@@ -10,10 +10,14 @@ import (
 	"time"
 
 	"github.com/chmenegatti/goxpress"
+	"github.com/chmenegatti/goxpress/middleware"
 )
 
 func main() {
 	app := goxpress.New()
+
+	// Log one line per request to stdout (method, status, latency, path).
+	app.Use(middleware.Logger())
 
 	// Allow up to 15s for in-flight requests to drain on shutdown.
 	app.ShutdownTimeout = 15 * time.Second
@@ -29,8 +33,8 @@ func main() {
 		return c.String(http.StatusOK, "slow done")
 	})
 
-	log.Println("listening on :3000 (Ctrl-C to shut down gracefully)")
-	if err := app.ListenAndServe(":3000"); err != nil {
+	log.Println("listening on :3200 (Ctrl-C to shut down gracefully)")
+	if err := app.ListenAndServe(":3200"); err != nil {
 		log.Fatal(err)
 	}
 	log.Println("server stopped cleanly")
