@@ -90,6 +90,11 @@ Unmatched paths yield `404`; a path that exists for other methods yields `405`
 with an `Allow` header. Trailing-slash mismatches redirect automatically (set
 `app.RedirectTrailingSlash = false` to disable).
 
+`HEAD` requests without an explicit `HEAD` route are answered by the matching
+`GET` handler with the body discarded, and `OPTIONS` requests are answered with
+a `204` and an `Allow` header listing the registered methods. Disable either
+with `app.HandleHEAD = false` / `app.HandleOPTIONS = false`.
+
 ## Context
 
 ```go
