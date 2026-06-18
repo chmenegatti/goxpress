@@ -192,6 +192,21 @@ func getBook(c *goxpress.Context) error {
 `500`. Override with `app.ErrorHandler`. Panics are recovered by default
 (`app.Recovery`).
 
+## Graceful shutdown
+
+```go
+app := goxpress.New()
+app.ShutdownTimeout = 15 * time.Second // drain window (default 10s)
+
+// Traps SIGINT/SIGTERM, then drains in-flight requests before returning.
+if err := app.ListenAndServe(":3000"); err != nil {
+	log.Fatal(err)
+}
+```
+
+Need full control over the server? `app.Server(addr)` returns a configured
+`*http.Server` you can tune (timeouts, TLS) and run yourself.
+
 ## Performance
 
 ```
@@ -206,6 +221,8 @@ Runnable programs live under [`examples/`](examples):
 - [`examples/basic`](examples/basic) — routing, params and JSON
 - [`examples/rest-api`](examples/rest-api) — CRUD with groups, middleware,
   binding and error handling
+- [`examples/graceful`](examples/graceful) — graceful shutdown draining
+  in-flight requests on SIGINT/SIGTERM
 
 ## Status
 

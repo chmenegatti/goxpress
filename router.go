@@ -5,6 +5,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Router is the central goXpress multiplexer. It holds one radix tree per HTTP
@@ -50,6 +51,11 @@ type Router struct {
 	// and routes them through ErrorHandler as a *PanicError instead of letting
 	// them crash the server.
 	Recovery bool
+
+	// ShutdownTimeout bounds how long ListenAndServe waits for in-flight
+	// requests to drain on a shutdown signal. When zero, DefaultShutdownTimeout
+	// is used.
+	ShutdownTimeout time.Duration
 }
 
 // New creates a Router with sensible defaults.
