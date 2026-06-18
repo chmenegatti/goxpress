@@ -3,6 +3,7 @@ package goxpress
 import (
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,15 @@ type Router struct {
 	// requests to drain on a shutdown signal. When zero, DefaultShutdownTimeout
 	// is used.
 	ShutdownTimeout time.Duration
+
+	// HandleHEAD, when true (the default), answers HEAD requests that have no
+	// explicit HEAD route using the matching GET handler, discarding the body.
+	HandleHEAD bool
+
+	// HandleOPTIONS, when true (the default), answers OPTIONS requests that have
+	// no explicit OPTIONS route with an empty 204 response whose Allow header
+	// lists the methods registered for the path.
+	HandleOPTIONS bool
 }
 
 // New creates a Router with sensible defaults.
@@ -65,6 +75,8 @@ func New() *Router {
 		RedirectTrailingSlash: true,
 		ErrorHandler:          DefaultErrorHandler,
 		Recovery:              true,
+		HandleHEAD:            true,
+		HandleOPTIONS:         true,
 	}
 	r.pool.New = func() any {
 		return &Context{params: make(Params, 0, r.maxParams)}
@@ -182,9 +194,37 @@ func (r *Router) dispatch(c *Context) {
 		}
 	}
 
+	// Automatic HEAD: answer with the GET handler but discard its body.
+	if method == http.MethodHead && r.HandleHEAD {
+		if root := r.trees[http.MethodGet]; root != nil {
+			res := root.getValue(path, c.params)
+			if res.handlers != nil {
+				c.params = res.params
+				c.writer.suppressBody = true
+				r.runChain(c, res.handlers)
+				return
+			}
+		}
+	}
+
 	// The path may exist for other methods (405) rather than not at all (404).
-	if allowed := r.allowedMethods(path, method); len(allowed) > 0 {
-		c.Writer.Header().Set("Allow", strings.Join(allowed, ", "))
+	allow := r.allowHeader(path)
+
+	// Automatic OPTIONS: reply with the Allow header and no body. The default
+	// handler runs through the global middleware chain so middleware such as
+	// CORS can intercept the preflight before it is reached.
+	if method == http.MethodOptions && r.HandleOPTIONS && allow != nil {
+		allowList := strings.Join(allow, ", ")
+		r.runChain(c, r.compose([]HandlerFunc{func(c *Context) error {
+			c.Writer.Header().Set("Allow", allowList)
+			c.Writer.WriteHeader(http.StatusNoContent)
+			return nil
+		}}))
+		return
+	}
+
+	if allow != nil {
+		c.Writer.Header().Set("Allow", strings.Join(allow, ", "))
 		r.runChain(c, r.compose([]HandlerFunc{r.notFoundHandler(http.StatusMethodNotAllowed, r.MethodNotAllowed)}))
 		return
 	}
@@ -234,19 +274,32 @@ func (r *Router) notFoundHandler(code int, h HandlerFunc) HandlerFunc {
 	}
 }
 
-// allowedMethods returns the methods, other than the excluded one, that have a
-// handler registered for path.
-func (r *Router) allowedMethods(path, exclude string) []string {
-	var allowed []string
+// allowHeader returns the sorted list of methods to advertise in an Allow
+// header for path, including HEAD and OPTIONS when their automatic handling is
+// enabled. It returns nil when no route is registered for path under any
+// method, letting the caller fall through to a 404.
+func (r *Router) allowHeader(path string) []string {
+	var methods []string
 	for method, root := range r.trees {
-		if method == exclude {
-			continue
-		}
 		if root.getValue(path, nil).handlers != nil {
-			allowed = append(allowed, method)
+			methods = append(methods, method)
 		}
 	}
-	return allowed
+	if methods == nil {
+		return nil
+	}
+
+	if r.HandleHEAD &&
+		slices.Contains(methods, http.MethodGet) &&
+		!slices.Contains(methods, http.MethodHead) {
+		methods = append(methods, http.MethodHead)
+	}
+	if r.HandleOPTIONS && !slices.Contains(methods, http.MethodOptions) {
+		methods = append(methods, http.MethodOptions)
+	}
+
+	slices.Sort(methods)
+	return methods
 }
 
 // Listen starts an HTTP server on addr using this router as the handler. It

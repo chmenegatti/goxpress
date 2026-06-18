@@ -90,6 +90,11 @@ Unmatched paths yield `404`; a path that exists for other methods yields `405`
 with an `Allow` header. Trailing-slash mismatches redirect automatically (set
 `app.RedirectTrailingSlash = false` to disable).
 
+`HEAD` requests without an explicit `HEAD` route are answered by the matching
+`GET` handler with the body discarded, and `OPTIONS` requests are answered with
+a `204` and an `Allow` header listing the registered methods. Disable either
+with `app.HandleHEAD = false` / `app.HandleOPTIONS = false`.
+
 ## Context
 
 ```go
@@ -105,6 +110,22 @@ func handler(c *goxpress.Context) error {
 	return c.JSON(http.StatusOK, payload) // JSON / XML / String / Blob / NoContent / Redirect
 }
 ```
+
+## Static files
+
+```go
+app.Static("/assets", "./public")          // serve a directory tree
+app.File("/favicon.ico", "./public/favicon.ico") // serve a single file
+
+app.Get("/logo", func(c *goxpress.Context) error {
+	return c.File("./public/logo.png")       // or c.Attachment(path, "logo.png")
+})
+```
+
+`Static` maps a directory under a URL prefix via a catch-all route; path
+traversal is blocked and content types are detected automatically. `StaticFS`
+takes any `fs.FS` (e.g. an `embed.FS`), and `c.FileFromFS` serves a single file
+from one.
 
 ## Groups & mounting
 

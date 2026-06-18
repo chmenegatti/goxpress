@@ -38,6 +38,9 @@ type responseWriter struct {
 	http.ResponseWriter
 	status int
 	size   int
+	// suppressBody discards body writes while still recording their size,
+	// used to serve HEAD requests from a GET handler without sending a body.
+	suppressBody bool
 }
 
 // reset re-binds the writer to a new underlying http.ResponseWriter for reuse
@@ -46,6 +49,7 @@ func (w *responseWriter) reset(rw http.ResponseWriter) {
 	w.ResponseWriter = rw
 	w.status = noStatus
 	w.size = 0
+	w.suppressBody = false
 }
 
 // WriteHeader records the status code and forwards it to the underlying writer
@@ -64,6 +68,10 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 	if w.status == noStatus {
 		w.WriteHeader(http.StatusOK)
 	}
+	if w.suppressBody {
+		w.size += len(b)
+		return len(b), nil
+	}
 	n, err := w.ResponseWriter.Write(b)
 	w.size += n
 	return n, err
@@ -74,6 +82,10 @@ func (w *responseWriter) Write(b []byte) (int, error) {
 func (w *responseWriter) WriteString(s string) (int, error) {
 	if w.status == noStatus {
 		w.WriteHeader(http.StatusOK)
+	}
+	if w.suppressBody {
+		w.size += len(s)
+		return len(s), nil
 	}
 	n, err := io.WriteString(w.ResponseWriter, s)
 	w.size += n
