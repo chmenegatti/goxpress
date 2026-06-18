@@ -2,6 +2,7 @@ package goxpress
 
 import (
 	"net/http"
+	"os"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -66,6 +67,10 @@ type Router struct {
 	// no explicit OPTIONS route with an empty 204 response whose Allow header
 	// lists the methods registered for the path.
 	HandleOPTIONS bool
+
+	// Banner, when true (the default), prints a startup banner to standard
+	// output when ListenAndServe or Listen begins serving.
+	Banner bool
 }
 
 // New creates a Router with sensible defaults.
@@ -77,6 +82,7 @@ func New() *Router {
 		Recovery:              true,
 		HandleHEAD:            true,
 		HandleOPTIONS:         true,
+		Banner:                true,
 	}
 	r.pool.New = func() any {
 		return &Context{params: make(Params, 0, r.maxParams)}
@@ -305,6 +311,7 @@ func (r *Router) allowHeader(path string) []string {
 // Listen starts an HTTP server on addr using this router as the handler. It
 // blocks until the server stops and returns the resulting error.
 func (r *Router) Listen(addr string) error {
+	r.printBanner(os.Stdout, addr)
 	return http.ListenAndServe(addr, r)
 }
 
