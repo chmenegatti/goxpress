@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	"github.com/chmenegatti/goxpress"
 )
@@ -68,6 +69,35 @@ func ExampleNewHTTPError() {
 	// Output:
 	// 403
 	// {"error":"access denied"}
+}
+
+// ExampleBindJSON shows the generics-based binding API decoding a JSON body
+// into a typed value without a pre-declared variable.
+func ExampleBindJSON() {
+	type CreateUser struct {
+		Name string `json:"name"`
+	}
+
+	app := goxpress.New()
+	app.Post("/users", func(c *goxpress.Context) error {
+		req, err := goxpress.BindJSON[CreateUser](c)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, req)
+	})
+
+	body := strings.NewReader(`{"name":"ada"}`)
+	r := httptest.NewRequest(http.MethodPost, "/users", body)
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, r)
+
+	fmt.Println(w.Code)
+	fmt.Println(w.Body.String())
+	// Output:
+	// 201
+	// {"name":"ada"}
 }
 
 // ExampleContext_HTML renders a named html/template through a Renderer set on
