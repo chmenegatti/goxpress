@@ -36,6 +36,8 @@ radix-tree engine, while staying **100% compatible with the standard
   HTML template responses
 - 📡 **Streaming** — Server-Sent Events (`c.SSEvent`) and dependency-free
   WebSockets (`ws` subpackage)
+- 📑 **OpenAPI 3.1** — generate `/openapi.json` from your routes with fluent
+  metadata, zero dependencies
 - 🛠 **Batteries included** — `middleware/` package: Logger, Recoverer,
   RequestID, RealIP, CORS, Timeout, Compress, Decompress, BasicAuth,
   SecureHeaders, RateLimit, BodyLimit — all standard-library only
@@ -290,6 +292,40 @@ app.Get("/ws", func(c *goxpress.Context) error {
 	}
 })
 ```
+
+## OpenAPI
+
+Generate an OpenAPI 3.1 document from your routes — no third-party deps, all
+stdlib reflection done once at setup (never per request). Route registration
+returns a `*Route` you can annotate with a fluent chain:
+
+```go
+app := goxpress.New()
+
+app.Post("/users", createUser).
+	Summary("Create user").
+	Tags("Users").
+	Body(CreateUser{}).      // request schema (reflected from the type)
+	Produces(201, User{}).   // response schema
+	Response(400, "Invalid payload")
+
+app.Get("/users/:id", getUser).Produces(200, User{}) // {id} path param inferred
+app.Get("/users", listUsers).Query(UserFilter{})     // query params from tags
+
+app.OpenAPI() // serves GET /openapi.json (call after routes are registered)
+```
+
+Struct types become reusable `components.schemas` entries referenced by `$ref`.
+Prefer types over instances? Use the generic helpers:
+
+```go
+goxpress.Body[CreateUser](app.Post("/users", createUser))
+goxpress.Produces[User](route, 201)
+goxpress.Query[UserFilter](route)
+```
+
+Swagger UI is intentionally kept out of the core; it will ship as a separate
+opt-in package.
 
 ## Error handling
 

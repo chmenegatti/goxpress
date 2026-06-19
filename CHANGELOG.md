@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Automatic OpenAPI 3.1 generation (#22): route registration now returns a
+  `*Route` with a fluent metadata API (`Summary`, `Description`, `Tags`,
+  `Body`, `Query`, `Produces`, `Response`, `Hide`) plus generic `Body[T]`,
+  `Query[T]` and `Produces[T]` helpers. `app.OpenAPI()` serves the generated
+  document at `GET /openapi.json`. Path params, query params and struct schemas
+  (reused via `components.schemas` `$ref`) are derived by reflection at setup
+  time only — never per request. Core stays dependency-free; Swagger UI is
+  deferred to a separate opt-in package.
+
 ## [0.3.0] - 2026-06-18
 
 ### Added

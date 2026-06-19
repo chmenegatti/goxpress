@@ -237,7 +237,7 @@ func TestGroupVerbsAndUse(t *testing.T) {
 	g := r.Group("/api/")
 	g.Use(func(c *Context) error { c.SetHeader("X-G", "1"); return c.Next() })
 
-	verbs := map[string]func(string, ...HandlerFunc){
+	verbs := map[string]func(string, ...HandlerFunc) *Route{
 		http.MethodGet:     g.Get,
 		http.MethodPost:    g.Post,
 		http.MethodPut:     g.Put,
