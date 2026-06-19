@@ -20,6 +20,22 @@ import (
 // to the client, and returns its host:port.
 func echoServer(t *testing.T) string {
 	t.Helper()
+	return wsServer(t, func(conn *ws.Conn) {
+		for {
+			mt, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if err := conn.WriteMessage(mt, msg); err != nil {
+				return
+			}
+		}
+	})
+}
+
+// wsServer starts a server whose /ws route upgrades and hands the Conn to fn.
+func wsServer(t *testing.T, fn func(*ws.Conn)) string {
+	t.Helper()
 	app := goxpress.New()
 	app.Get("/ws", func(c *goxpress.Context) error {
 		conn, err := ws.Upgrade(c)
@@ -27,15 +43,8 @@ func echoServer(t *testing.T) string {
 			return err
 		}
 		defer func() { _ = conn.Close() }()
-		for {
-			mt, msg, err := conn.ReadMessage()
-			if err != nil {
-				return nil
-			}
-			if err := conn.WriteMessage(mt, msg); err != nil {
-				return nil
-			}
-		}
+		fn(conn)
+		return nil
 	})
 
 	srv := httptest.NewServer(app)
@@ -147,6 +156,111 @@ func TestWebSocketEcho(t *testing.T) {
 	}
 }
 
+// writeClientOp writes a masked client frame with an explicit opcode and FIN
+// bit, as a conforming client must (all client frames are masked).
+func writeClientOp(t *testing.T, conn net.Conn, opcode byte, fin bool, payload []byte) {
+	t.Helper()
+	var mask [4]byte
+	if _, err := rand.Read(mask[:]); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+
+	b0 := opcode
+	if fin {
+		b0 |= 0x80
+	}
+	n := len(payload)
+	frame := make([]byte, 0, 2+4+n)
+	frame = append(frame, b0, byte(0x80|n)) // payloads here stay < 126
+	frame = append(frame, mask[:]...)
+	for i := range payload {
+		frame = append(frame, payload[i]^mask[i%4])
+	}
+	if _, err := conn.Write(frame); err != nil {
+		t.Fatalf("write op frame: %v", err)
+	}
+}
+
+// readServerOp reads a single server frame, returning its opcode and payload.
+func readServerOp(t *testing.T, br *bufio.Reader) (byte, []byte) {
+	t.Helper()
+	var h [2]byte
+	if _, err := io.ReadFull(br, h[:]); err != nil {
+		t.Fatalf("read frame header: %v", err)
+	}
+	opcode := h[0] & 0x0f
+	length := uint64(h[1] & 0x7f)
+	switch length {
+	case 126:
+		var ext [2]byte
+		_, _ = io.ReadFull(br, ext[:])
+		length = uint64(binary.BigEndian.Uint16(ext[:]))
+	case 127:
+		var ext [8]byte
+		_, _ = io.ReadFull(br, ext[:])
+		length = binary.BigEndian.Uint64(ext[:])
+	}
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(br, payload); err != nil {
+		t.Fatalf("read payload: %v", err)
+	}
+	return opcode, payload
+}
+
+func TestWebSocketFragmented(t *testing.T) {
+	host := echoServer(t)
+	conn, br := dialWS(t, host)
+	defer func() { _ = conn.Close() }()
+
+	// Text message split across two frames: opcode text (FIN=0) + continuation
+	// (FIN=1).
+	writeClientOp(t, conn, 0x1, false, []byte("Hel"))
+	writeClientOp(t, conn, 0x0, true, []byte("lo"))
+
+	if _, got := readServerOp(t, br); string(got) != "Hello" {
+		t.Errorf("reassembled = %q, want Hello", got)
+	}
+}
+
+func TestWebSocketPing(t *testing.T) {
+	host := echoServer(t)
+	conn, br := dialWS(t, host)
+	defer func() { _ = conn.Close() }()
+
+	writeClientOp(t, conn, 0x9, true, []byte("pp")) // ping
+	op, payload := readServerOp(t, br)
+	if op != 0xA { // pong
+		t.Errorf("opcode = 0x%x, want pong 0xA", op)
+	}
+	if string(payload) != "pp" {
+		t.Errorf("pong payload = %q, want pp", payload)
+	}
+}
+
+func TestWebSocketClose(t *testing.T) {
+	host := echoServer(t)
+	conn, br := dialWS(t, host)
+	defer func() { _ = conn.Close() }()
+
+	writeClientOp(t, conn, 0x8, true, nil) // close
+	if op, _ := readServerOp(t, br); op != 0x8 {
+		t.Errorf("opcode = 0x%x, want close 0x8", op)
+	}
+}
+
+func TestWebSocketWriteText(t *testing.T) {
+	host := wsServer(t, func(conn *ws.Conn) {
+		_ = conn.WriteText("greetings")
+	})
+	conn, br := dialWS(t, host)
+	defer func() { _ = conn.Close() }()
+
+	op, payload := readServerOp(t, br)
+	if op != 0x1 || string(payload) != "greetings" {
+		t.Errorf("WriteText frame = 0x%x %q", op, payload)
+	}
+}
+
 func TestUpgradeRejectsNonWebSocket(t *testing.T) {
 	app := goxpress.New()
 	var upErr error
@@ -165,5 +279,71 @@ func TestUpgradeRejectsNonWebSocket(t *testing.T) {
 	}
 	if upErr == nil || !strings.Contains(upErr.Error(), "not a websocket") {
 		t.Errorf("err = %v, want not-a-websocket", upErr)
+	}
+}
+
+func TestUpgradeHijackUnsupported(t *testing.T) {
+	var upErr error
+	app := goxpress.New()
+	app.Get("/ws", func(c *goxpress.Context) error {
+		_, upErr = ws.Upgrade(c)
+		return nil
+	})
+
+	// A valid handshake request, but httptest.ResponseRecorder cannot be
+	// hijacked, so Upgrade must surface the hijack error.
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req.Header.Set("Upgrade", "websocket")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Sec-WebSocket-Version", "13")
+	req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	app.ServeHTTP(httptest.NewRecorder(), req)
+
+	if upErr == nil || !strings.Contains(upErr.Error(), "hijack") {
+		t.Errorf("err = %v, want hijack error", upErr)
+	}
+}
+
+func TestUpgradeHeaderValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		wantSub string
+	}{
+		{
+			name: "bad version",
+			headers: map[string]string{
+				"Upgrade": "websocket", "Connection": "Upgrade",
+				"Sec-WebSocket-Version": "8", "Sec-WebSocket-Key": "x",
+			},
+			wantSub: "unsupported websocket version",
+		},
+		{
+			name: "missing key",
+			headers: map[string]string{
+				"Upgrade": "websocket", "Connection": "Upgrade",
+				"Sec-WebSocket-Version": "13",
+			},
+			wantSub: "missing Sec-WebSocket-Key",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var upErr error
+			app := goxpress.New()
+			app.Get("/ws", func(c *goxpress.Context) error {
+				_, upErr = ws.Upgrade(c)
+				return nil
+			})
+			req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+			for k, v := range tc.headers {
+				req.Header.Set(k, v)
+			}
+			app.ServeHTTP(httptest.NewRecorder(), req)
+			if upErr == nil || !strings.Contains(upErr.Error(), tc.wantSub) {
+				t.Errorf("err = %v, want substring %q", upErr, tc.wantSub)
+			}
+		})
 	}
 }

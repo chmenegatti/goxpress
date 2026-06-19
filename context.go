@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -309,7 +310,7 @@ func (c *Context) Redirect(code int, location string) error {
 // underlying writer does not support flushing.
 func (c *Context) Flush() error {
 	err := http.NewResponseController(c.Writer).Flush()
-	if err == http.ErrNotSupported {
+	if errors.Is(err, http.ErrNotSupported) {
 		return nil
 	}
 	return err

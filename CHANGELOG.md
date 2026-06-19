@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Comparative router benchmarks vs gin, chi and echo (#10), living in a separate
+  `benchmarks/` module so competitor dependencies stay out of the core. Run with
+  `make bench-compare`; results table published in the README.
+- Router path-matcher fuzz test (`FuzzRouterMatch`) (#9).
+
+### Changed
+
+- Raised test coverage above 90% across the library packages (#9), adding tests
+  for Context helpers, binding, groups, `Mount`, `FromStd`, static file serving,
+  the WebSocket control-frame paths, and the middleware default constructors.
+  `make cover` now reports on library packages only (the runnable examples carry
+  no tests).
+
 ## [0.2.0] - 2026-06-18
 
 ### Added

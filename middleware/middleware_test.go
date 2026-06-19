@@ -344,6 +344,109 @@ func TestDecompressInvalidBody(t *testing.T) {
 	}
 }
 
+// TestDefaultConstructors exercises the convenience constructors that delegate
+// to their *WithConfig counterparts with default configuration.
+func TestDefaultConstructors(t *testing.T) {
+	r := goxpress.New()
+	r.Use(
+		middleware.Logger(),
+		middleware.Recoverer(),
+		middleware.SecureHeaders(),
+		middleware.RateLimit(1000),
+	)
+	r.Get("/", func(c *goxpress.Context) error { return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.0.2.1:9999"
+	w := serve(r, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("code = %d, want 200", w.Code)
+	}
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("SecureHeaders default not applied")
+	}
+}
+
+func TestRealIPVariants(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+		value  string
+		want   string
+	}{
+		{"x-real-ip", "X-Real-IP", "198.51.100.9", "198.51.100.9"},
+		{"x-forwarded-for first", "X-Forwarded-For", "198.51.100.7, 10.0.0.1", "198.51.100.7"},
+		{"invalid ignored", "X-Real-IP", "not-an-ip", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := goxpress.New()
+			r.Use(middleware.RealIP())
+			var got string
+			r.Get("/", func(c *goxpress.Context) error { got = c.Request.RemoteAddr; return nil })
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "10.1.1.1:5000"
+			req.Header.Set(tc.header, tc.value)
+			serve(r, req)
+			if tc.want != "" && got != tc.want {
+				t.Errorf("RemoteAddr = %q, want %q", got, tc.want)
+			}
+			if tc.want == "" && got != "10.1.1.1:5000" {
+				t.Errorf("invalid header changed RemoteAddr to %q", got)
+			}
+		})
+	}
+}
+
+func TestCORSCredentialsEchoesOrigin(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     []string{"*"},
+		AllowCredentials: true,
+		ExposeHeaders:    []string{"X-Total"},
+	}))
+	r.Get("/", func(c *goxpress.Context) error { return nil })
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Origin", "https://app.example.com")
+	w := serve(r, req)
+	// With credentials the wildcard is replaced by the echoed origin.
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://app.example.com" {
+		t.Errorf("allow-origin = %q, want echoed origin", got)
+	}
+	if w.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Error("missing allow-credentials")
+	}
+	if w.Header().Get("Access-Control-Expose-Headers") != "X-Total" {
+		t.Error("missing expose-headers")
+	}
+}
+
+func TestDecompressClosesBody(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.Decompress())
+	r.Post("/", func(c *goxpress.Context) error {
+		b, _ := io.ReadAll(c.Request.Body)
+		if string(b) != "payload" {
+			t.Errorf("body = %q", b)
+		}
+		// Closing the wrapped body exercises gzipReadCloser.Close.
+		return c.Request.Body.Close()
+	})
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	_, _ = gz.Write([]byte("payload"))
+	_ = gz.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/", &buf)
+	req.Header.Set("Content-Encoding", "gzip")
+	if w := serve(r, req); w.Code >= 400 {
+		t.Errorf("code = %d", w.Code)
+	}
+}
+
 func TestTimeoutSetsDeadline(t *testing.T) {
 	r := goxpress.New()
 	r.Use(middleware.Timeout(50 * time.Millisecond))
