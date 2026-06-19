@@ -207,6 +207,27 @@ func createUser(c *goxpress.Context) error {
 `Bind` negotiates by `Content-Type` (JSON or form); `BindJSON`, `BindForm` and
 `BindQuery` (struct tags `query`/`form`) are available explicitly.
 
+## HTML rendering
+
+Set a `Renderer` on the router, then render named templates with `c.HTML`. The
+`TemplateRenderer` adapts the stdlib `html/template`, so the core stays
+dependency-free:
+
+```go
+tmpl := template.Must(template.ParseGlob("views/*.html"))
+
+app := goxpress.New()
+app.Renderer = goxpress.NewTemplateRenderer(tmpl)
+
+app.Get("/", func(c *goxpress.Context) error {
+	return c.HTML(http.StatusOK, "index.html", map[string]any{"Title": "Home"})
+})
+```
+
+Rendering is buffered: a template error surfaces to the error handler with
+nothing written to the client. Implement the `Renderer` interface to plug in any
+other engine.
+
 ## Error handling
 
 Return an `error` from any handler — the centralized handler renders it:

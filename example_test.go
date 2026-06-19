@@ -2,6 +2,7 @@ package goxpress_test
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 
@@ -67,4 +68,28 @@ func ExampleNewHTTPError() {
 	// Output:
 	// 403
 	// {"error":"access denied"}
+}
+
+// ExampleContext_HTML renders a named html/template through a Renderer set on
+// the Router.
+func ExampleContext_HTML() {
+	tmpl := template.Must(template.New("hello").Parse(`<h1>Hello, {{.Name}}!</h1>`))
+
+	app := goxpress.New()
+	app.Renderer = goxpress.NewTemplateRenderer(tmpl)
+	app.Get("/", func(c *goxpress.Context) error {
+		return c.HTML(http.StatusOK, "hello", map[string]string{"Name": "world"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+
+	fmt.Println(w.Code)
+	fmt.Println(w.Header().Get("Content-Type"))
+	fmt.Println(w.Body.String())
+	// Output:
+	// 200
+	// text/html; charset=utf-8
+	// <h1>Hello, world!</h1>
 }
