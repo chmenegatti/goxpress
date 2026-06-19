@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Additional standard-library-only middleware (#6): `BasicAuth` (HTTP Basic
+  authentication), `SecureHeaders` (X-Content-Type-Options, X-Frame-Options,
+  CSP, Referrer-Policy, HSTS over TLS), `RateLimit` (per-IP token bucket),
+  `BodyLimit` (max request body size), and `Decompress` (gzip request body
+  decompression, the request-side counterpart to `Compress`).
+
 ## [0.1.0] - 2026-06-14
 
 Initial public preview.
