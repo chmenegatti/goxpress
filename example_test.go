@@ -1,6 +1,7 @@
 package goxpress_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -98,6 +99,37 @@ func ExampleBindJSON() {
 	// Output:
 	// 201
 	// {"name":"ada"}
+}
+
+// ExampleRouter_OpenAPI documents routes with fluent metadata and serves the
+// generated OpenAPI 3.1 spec at /openapi.json.
+func ExampleRouter_OpenAPI() {
+	type CreateUser struct {
+		Name string `json:"name"`
+	}
+	type User struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+
+	app := goxpress.New()
+	app.Post("/users", func(c *goxpress.Context) error { return nil }).
+		Summary("Create user").
+		Tags("Users").
+		Body(CreateUser{}).
+		Produces(201, User{})
+	app.OpenAPI()
+
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+
+	var doc struct {
+		OpenAPI string `json:"openapi"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &doc)
+	fmt.Println(doc.OpenAPI)
+	// Output:
+	// 3.1.0
 }
 
 // ExampleContext_HTML renders a named html/template through a Renderer set on

@@ -24,6 +24,10 @@ type Router struct {
 	// after the middleware was added.
 	middleware []HandlerFunc
 
+	// routes records metadata for every registered route, in registration
+	// order, for OpenAPI document generation.
+	routes []*Route
+
 	// pool recycles Context values across requests to avoid per-request
 	// allocations on the hot path.
 	pool sync.Pool
@@ -100,7 +104,7 @@ func New() *Router {
 //
 // It panics if method or path is empty, if path does not start with '/', or if
 // no handler is supplied — all of which are setup-time programming errors.
-func (r *Router) Handle(method, path string, handlers ...HandlerFunc) {
+func (r *Router) Handle(method, path string, handlers ...HandlerFunc) *Route {
 	switch {
 	case method == "":
 		panic("goxpress: HTTP method must not be empty")
@@ -120,6 +124,10 @@ func (r *Router) Handle(method, path string, handlers ...HandlerFunc) {
 	if c := countParams(path); c > r.maxParams {
 		r.maxParams = c
 	}
+
+	rt := newRoute(method, path)
+	r.routes = append(r.routes, rt)
+	return rt
 }
 
 // Use registers global middleware. Middleware runs, in registration order,
@@ -138,39 +146,40 @@ func (r *Router) compose(handlers []HandlerFunc) []HandlerFunc {
 	return chain
 }
 
-// Get registers handlers for the GET method.
-func (r *Router) Get(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodGet, path, handlers...)
+// Get registers handlers for the GET method and returns the route for optional
+// OpenAPI metadata chaining.
+func (r *Router) Get(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodGet, path, handlers...)
 }
 
 // Post registers handlers for the POST method.
-func (r *Router) Post(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPost, path, handlers...)
+func (r *Router) Post(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodPost, path, handlers...)
 }
 
 // Put registers handlers for the PUT method.
-func (r *Router) Put(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPut, path, handlers...)
+func (r *Router) Put(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodPut, path, handlers...)
 }
 
 // Patch registers handlers for the PATCH method.
-func (r *Router) Patch(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodPatch, path, handlers...)
+func (r *Router) Patch(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodPatch, path, handlers...)
 }
 
 // Delete registers handlers for the DELETE method.
-func (r *Router) Delete(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodDelete, path, handlers...)
+func (r *Router) Delete(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodDelete, path, handlers...)
 }
 
 // Head registers handlers for the HEAD method.
-func (r *Router) Head(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodHead, path, handlers...)
+func (r *Router) Head(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodHead, path, handlers...)
 }
 
 // Options registers handlers for the OPTIONS method.
-func (r *Router) Options(path string, handlers ...HandlerFunc) {
-	r.Handle(http.MethodOptions, path, handlers...)
+func (r *Router) Options(path string, handlers ...HandlerFunc) *Route {
+	return r.Handle(http.MethodOptions, path, handlers...)
 }
 
 // ServeHTTP implements http.Handler, routing the request to its matching
