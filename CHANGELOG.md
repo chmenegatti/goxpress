@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Streaming responses (#3): `Context.SSEvent(event, data)` writes a Server-Sent
+  Event with the correct `text/event-stream` headers and flushes it immediately
+  (multi-line data is split into per-line `data:` fields); `Context.Flush`
+  exposes manual flushing. A new dependency-free `ws` subpackage adds RFC 6455
+  WebSocket support: `ws.Upgrade(c)` returns a `Conn` with `ReadMessage` /
+  `WriteMessage` / `WriteText`, reassembling fragments and answering pings.
+  Includes an `examples/streaming` program.
 - HTML template rendering (#1): `Context.HTML(code, name, data)` renders a named
   template through a pluggable `Renderer` set on `Router.Renderer`. A
   `TemplateRenderer` adapts `html/template` out of the box, keeping the core
