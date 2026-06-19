@@ -209,6 +209,23 @@ func createUser(c *goxpress.Context) error {
 `Bind` negotiates by `Content-Type` (JSON or form); `BindJSON`, `BindForm` and
 `BindQuery` (struct tags `query`/`form`) are available explicitly.
 
+A generics-based convenience API returns the decoded value directly — both
+styles coexist:
+
+```go
+// classic (pointer)
+var req CreateUser
+if err := c.Bind(&req); err != nil {
+	return err
+}
+
+// generics
+req, err := goxpress.Bind[CreateUser](c)        // content-type negotiated
+req, err := goxpress.BindJSON[CreateUser](c)
+req, err := goxpress.BindQuery[Filter](c)
+req, err := goxpress.BindForm[LoginRequest](c)
+```
+
 ## HTML rendering
 
 Set a `Renderer` on the router, then render named templates with `c.HTML`. The

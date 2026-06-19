@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Generics-based binding API (#19): package-level `Bind[T]`, `BindJSON[T]`,
+  `BindQuery[T]` and `BindForm[T]` return the decoded value directly. They are a
+  thin convenience layer over the existing pointer-based `Context` methods — no
+  new binding logic, no breaking changes, stdlib only.
 - Comparative router benchmarks vs gin, chi and echo (#10), living in a separate
   `benchmarks/` module so competitor dependencies stay out of the core. Run with
   `make bench-compare`; results table published in the README.
