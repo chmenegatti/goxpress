@@ -11,4 +11,9 @@
 //		middleware.Logger(),
 //		middleware.Recoverer(),
 //	)
+//
+// The package covers request identification (RequestID, RealIP), observability
+// (Logger, Recoverer), CORS, timeouts, response compression (Compress) and
+// request decompression (Decompress), authentication (BasicAuth), security
+// response headers (SecureHeaders), and request shaping (RateLimit, BodyLimit).
 package middleware

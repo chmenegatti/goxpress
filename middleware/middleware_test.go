@@ -3,6 +3,7 @@ package middleware_test
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -162,6 +163,184 @@ func TestCompressSkippedWithoutAcceptEncoding(t *testing.T) {
 	}
 	if w.Body.String() != "plain" {
 		t.Errorf("body = %q, want plain", w.Body.String())
+	}
+}
+
+func TestBasicAuth(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.BasicAuth(func(user, pass string, _ *goxpress.Context) bool {
+		return user == "admin" && pass == "secret"
+	}))
+	r.Get("/", func(c *goxpress.Context) error { return c.String(http.StatusOK, "ok") })
+
+	// No credentials: 401 with challenge.
+	w := serve(r, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("missing creds code = %d, want 401", w.Code)
+	}
+	if !strings.HasPrefix(w.Header().Get("WWW-Authenticate"), "Basic realm=") {
+		t.Errorf("challenge = %q", w.Header().Get("WWW-Authenticate"))
+	}
+
+	// Wrong credentials: 401.
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetBasicAuth("admin", "wrong")
+	if w := serve(r, req); w.Code != http.StatusUnauthorized {
+		t.Errorf("bad creds code = %d, want 401", w.Code)
+	}
+
+	// Correct credentials: 200.
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.SetBasicAuth("admin", "secret")
+	if w := serve(r, req); w.Code != http.StatusOK {
+		t.Errorf("good creds code = %d, want 200", w.Code)
+	}
+}
+
+func TestSecureHeaders(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.SecureHeadersWithConfig(middleware.SecureHeadersConfig{
+		XContentTypeOptions:   "nosniff",
+		XFrameOptions:         "DENY",
+		ContentSecurityPolicy: "default-src 'self'",
+		ReferrerPolicy:        "no-referrer",
+		HSTSMaxAge:            3600,
+	}))
+	r.Get("/", func(c *goxpress.Context) error { return nil })
+
+	w := serve(r, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q", w.Header().Get("X-Content-Type-Options"))
+	}
+	if w.Header().Get("X-Frame-Options") != "DENY" {
+		t.Errorf("X-Frame-Options = %q", w.Header().Get("X-Frame-Options"))
+	}
+	if w.Header().Get("Content-Security-Policy") != "default-src 'self'" {
+		t.Errorf("CSP = %q", w.Header().Get("Content-Security-Policy"))
+	}
+	// HSTS must be absent over plain HTTP.
+	if w.Header().Get("Strict-Transport-Security") != "" {
+		t.Errorf("HSTS sent over non-TLS request")
+	}
+}
+
+func TestSecureHeadersHSTSOverTLS(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.SecureHeadersWithConfig(middleware.SecureHeadersConfig{
+		HSTSMaxAge:            3600,
+		HSTSIncludeSubdomains: true,
+	}))
+	r.Get("/", func(c *goxpress.Context) error { return nil })
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.TLS = &tls.ConnectionState{}
+	w := serve(r, req)
+	if got := w.Header().Get("Strict-Transport-Security"); got != "max-age=3600; includeSubDomains" {
+		t.Errorf("HSTS = %q", got)
+	}
+}
+
+func TestRateLimit(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.RateLimitWithConfig(middleware.RateLimitConfig{Rate: 1, Burst: 2}))
+	r.Get("/", func(c *goxpress.Context) error { return nil })
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.5:1234"
+
+	// Burst of 2 allowed, third denied.
+	for i := range 2 {
+		if w := serve(r, req); w.Code != http.StatusOK {
+			t.Fatalf("request %d code = %d, want 200", i, w.Code)
+		}
+	}
+	w := serve(r, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("over-limit code = %d, want 429", w.Code)
+	}
+	if w.Header().Get("Retry-After") == "" {
+		t.Error("missing Retry-After header on 429")
+	}
+}
+
+func TestRateLimitPerKey(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.RateLimitWithConfig(middleware.RateLimitConfig{Rate: 1, Burst: 1}))
+	r.Get("/", func(c *goxpress.Context) error { return nil })
+
+	// Two distinct IPs each get their own bucket.
+	for _, ip := range []string{"10.0.0.1:1", "10.0.0.2:1"} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = ip
+		if w := serve(r, req); w.Code != http.StatusOK {
+			t.Errorf("ip %s code = %d, want 200", ip, w.Code)
+		}
+	}
+}
+
+func TestBodyLimitContentLength(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.BodyLimit(8))
+	r.Post("/", func(c *goxpress.Context) error { return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("way too long body"))
+	w := serve(r, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("code = %d, want 413", w.Code)
+	}
+}
+
+func TestBodyLimitReadError(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.BodyLimit(4))
+	var readErr error
+	r.Post("/", func(c *goxpress.Context) error {
+		_, readErr = io.ReadAll(c.Request.Body)
+		return nil
+	})
+
+	// ContentLength unknown (-1) bypasses the early check; the read trips the cap.
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("123456789"))
+	req.ContentLength = -1
+	serve(r, req)
+	if readErr == nil {
+		t.Error("expected read error past body limit, got nil")
+	}
+}
+
+func TestDecompress(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.Decompress())
+	var got string
+	r.Post("/", func(c *goxpress.Context) error {
+		b, _ := io.ReadAll(c.Request.Body)
+		got = string(b)
+		return nil
+	})
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	_, _ = gz.Write([]byte("hello gzip"))
+	_ = gz.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/", &buf)
+	req.Header.Set("Content-Encoding", "gzip")
+	serve(r, req)
+	if got != "hello gzip" {
+		t.Errorf("decompressed body = %q, want %q", got, "hello gzip")
+	}
+}
+
+func TestDecompressInvalidBody(t *testing.T) {
+	r := goxpress.New()
+	r.Use(middleware.Decompress())
+	r.Post("/", func(c *goxpress.Context) error { return nil })
+
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not gzip"))
+	req.Header.Set("Content-Encoding", "gzip")
+	w := serve(r, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("code = %d, want 400", w.Code)
 	}
 }
 

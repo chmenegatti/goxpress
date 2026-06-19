@@ -35,7 +35,8 @@ radix-tree engine, while staying **100% compatible with the standard
 - 📦 **Binding & rendering** — JSON/query/form binding and JSON/XML/text/blob
   responses
 - 🛠 **Batteries included** — `middleware/` package: Logger, Recoverer,
-  RequestID, RealIP, CORS, Timeout, Compress — all standard-library only
+  RequestID, RealIP, CORS, Timeout, Compress, Decompress, BasicAuth,
+  SecureHeaders, RateLimit, BodyLimit — all standard-library only
 - 🪶 **Zero core dependencies**
 
 ## Install
@@ -169,9 +170,20 @@ app.Use(
 	middleware.Logger(),
 	middleware.Recoverer(),
 	middleware.CORS(),
+	middleware.SecureHeaders(),
 	middleware.Compress(),
+	middleware.Decompress(),
+	middleware.BodyLimit(1<<20), // 1 MiB
+	middleware.RateLimit(100),   // 100 req/s per IP
 	middleware.Timeout(5*time.Second),
 )
+
+// Guard a group with HTTP Basic auth.
+admin := app.Group("/admin", middleware.BasicAuth(
+	func(user, pass string, _ *goxpress.Context) bool {
+		return user == "admin" && pass == "s3cret"
+	},
+))
 ```
 
 ## Binding
