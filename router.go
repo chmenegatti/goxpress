@@ -71,6 +71,10 @@ type Router struct {
 	// Banner, when true (the default), prints a startup banner to standard
 	// output when ListenAndServe or Listen begins serving.
 	Banner bool
+
+	// Renderer renders named templates for Context.HTML. It is nil by default;
+	// set it (for example to a *TemplateRenderer) to enable HTML rendering.
+	Renderer Renderer
 }
 
 // New creates a Router with sensible defaults.
@@ -174,6 +178,7 @@ func (r *Router) Options(path string, handlers ...HandlerFunc) {
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := r.pool.Get().(*Context)
 	c.reset(w, req)
+	c.renderer = r.Renderer
 
 	r.dispatch(c)
 

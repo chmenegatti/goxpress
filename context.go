@@ -1,6 +1,7 @@
 package goxpress
 
 import (
+	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -54,6 +55,10 @@ type Context struct {
 
 	// store holds arbitrary request-scoped values shared between handlers.
 	store map[string]any
+
+	// renderer renders named templates for HTML. It is copied from the Router
+	// on each request and may be nil.
+	renderer Renderer
 }
 
 // abortIndex is well past any realistic chain length; setting index to it stops
@@ -249,6 +254,30 @@ func (c *Context) Blob(code int, contentType string, data []byte) error {
 	c.Writer.Header().Set("Content-Type", contentType)
 	c.Writer.WriteHeader(code)
 	_, err := c.Writer.Write(data)
+	return err
+}
+
+// HTML renders the named template through the Router's Renderer and writes it
+// with the given status code and a text/html content type.
+//
+// The template is rendered into a buffer first, so a rendering error is
+// returned with nothing written to the client, letting the error handler send
+// a clean response. It returns a 500 HTTPError when no Renderer is configured.
+func (c *Context) HTML(code int, name string, data any) error {
+	if c.renderer == nil {
+		return NewHTTPError(http.StatusInternalServerError,
+			"goxpress: no Renderer configured on Router").
+			WithInternal(fmt.Errorf("HTML(%q): Router.Renderer is nil", name))
+	}
+
+	var buf bytes.Buffer
+	if err := c.renderer.Render(&buf, name, data, c); err != nil {
+		return err
+	}
+
+	c.Writer.Header().Set("Content-Type", MIMEHTML)
+	c.Writer.WriteHeader(code)
+	_, err := c.Writer.Write(buf.Bytes())
 	return err
 }
 

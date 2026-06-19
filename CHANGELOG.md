@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- HTML template rendering (#1): `Context.HTML(code, name, data)` renders a named
+  template through a pluggable `Renderer` set on `Router.Renderer`. A
+  `TemplateRenderer` adapts `html/template` out of the box, keeping the core
+  free of third-party dependencies. Rendering is buffered, so a template error
+  surfaces to the error handler without a partial response.
 - Additional standard-library-only middleware (#6): `BasicAuth` (HTTP Basic
   authentication), `SecureHeaders` (X-Content-Type-Options, X-Frame-Options,
   CSP, Referrer-Policy, HSTS over TLS), `RateLimit` (per-IP token bucket),
