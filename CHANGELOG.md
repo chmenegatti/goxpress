@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-19
+
 ### Added
 
 - Automatic OpenAPI 3.1 generation (#22): route registration now returns a
