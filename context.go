@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // MIME types used by the response helpers.
@@ -16,6 +18,8 @@ const (
 	MIMEText  = "text/plain; charset=utf-8"
 	MIMEHTML  = "text/html; charset=utf-8"
 	MIMEBytes = "application/octet-stream"
+	// MIMEEventStream is the content type for Server-Sent Events.
+	MIMEEventStream = "text/event-stream"
 )
 
 // HandlerFunc is the signature for goXpress handlers and middleware.
@@ -295,6 +299,56 @@ func (c *Context) Redirect(code int, location string) error {
 	}
 	http.Redirect(c.Writer, c.Request, location, code)
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Streaming
+// ---------------------------------------------------------------------------
+
+// Flush sends any buffered response data to the client. It is a no-op when the
+// underlying writer does not support flushing.
+func (c *Context) Flush() error {
+	err := http.NewResponseController(c.Writer).Flush()
+	if err == http.ErrNotSupported {
+		return nil
+	}
+	return err
+}
+
+// SSEvent writes a single Server-Sent Event carrying data under the given event
+// name, then flushes it to the client so it is delivered immediately. An empty
+// event name omits the "event:" field. Data spanning multiple lines is split
+// into one "data:" field per line, as the SSE specification requires.
+//
+// The first call sets the text/event-stream response headers. Handlers stream
+// by calling SSEvent repeatedly, typically in a loop that also watches
+// c.Request.Context().Done() for client disconnect.
+func (c *Context) SSEvent(event, data string) error {
+	if !c.Writer.Written() {
+		h := c.Writer.Header()
+		h.Set("Content-Type", MIMEEventStream)
+		h.Set("Cache-Control", "no-cache")
+		h.Set("Connection", "keep-alive")
+		c.Writer.WriteHeader(http.StatusOK)
+	}
+
+	var b strings.Builder
+	if event != "" {
+		b.WriteString("event: ")
+		b.WriteString(event)
+		b.WriteByte('\n')
+	}
+	for line := range strings.SplitSeq(data, "\n") {
+		b.WriteString("data: ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	b.WriteByte('\n')
+
+	if _, err := io.WriteString(c.Writer, b.String()); err != nil {
+		return err
+	}
+	return c.Flush()
 }
 
 // ---------------------------------------------------------------------------

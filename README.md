@@ -32,8 +32,10 @@ radix-tree engine, while staying **100% compatible with the standard
 - 🧱 **Middleware** — onion-model chain with `Next`/`Abort`, plus adapters for
   standard `func(http.Handler) http.Handler` middleware
 - 🌳 **Groups & mounting** — shared prefixes/middleware and chi-style `Mount`
-- 📦 **Binding & rendering** — JSON/query/form binding and JSON/XML/text/blob
-  responses
+- 📦 **Binding & rendering** — JSON/query/form binding, JSON/XML/text/blob and
+  HTML template responses
+- 📡 **Streaming** — Server-Sent Events (`c.SSEvent`) and dependency-free
+  WebSockets (`ws` subpackage)
 - 🛠 **Batteries included** — `middleware/` package: Logger, Recoverer,
   RequestID, RealIP, CORS, Timeout, Compress, Decompress, BasicAuth,
   SecureHeaders, RateLimit, BodyLimit — all standard-library only
@@ -228,6 +230,50 @@ Rendering is buffered: a template error surfaces to the error handler with
 nothing written to the client. Implement the `Renderer` interface to plug in any
 other engine.
 
+## Streaming
+
+**Server-Sent Events** — `c.SSEvent` sets the `text/event-stream` headers on the
+first call and flushes each event:
+
+```go
+app.Get("/events", func(c *goxpress.Context) error {
+	for n := 1; ; n++ {
+		select {
+		case <-c.Request.Context().Done(): // client left
+			return nil
+		case <-time.Tick(time.Second):
+			if err := c.SSEvent("tick", strconv.Itoa(n)); err != nil {
+				return err
+			}
+		}
+	}
+})
+```
+
+**WebSockets** — the `ws` subpackage is a thin, dependency-free RFC 6455 server
+helper:
+
+```go
+import "github.com/chmenegatti/goxpress/ws"
+
+app.Get("/ws", func(c *goxpress.Context) error {
+	conn, err := ws.Upgrade(c)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	for {
+		mt, msg, err := conn.ReadMessage() // handles fragments, pings, close
+		if err != nil {
+			return nil
+		}
+		if err := conn.WriteMessage(mt, msg); err != nil {
+			return nil
+		}
+	}
+})
+```
+
 ## Error handling
 
 Return an `error` from any handler — the centralized handler renders it:
@@ -277,6 +323,8 @@ Runnable programs live under [`examples/`](examples):
   binding and error handling
 - [`examples/graceful`](examples/graceful) — graceful shutdown draining
   in-flight requests on SIGINT/SIGTERM
+- [`examples/streaming`](examples/streaming) — Server-Sent Events and a
+  WebSocket echo endpoint
 
 ## Status
 
