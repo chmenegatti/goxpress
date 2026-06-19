@@ -1,4 +1,4 @@
-.PHONY: all test cover bench lint vet fmt check tidy clean
+.PHONY: all test cover bench bench-compare lint vet fmt check tidy clean
 
 GO        ?= go
 PKG       ?= ./...
@@ -10,14 +10,19 @@ all: check
 test:
 	$(GO) test -race -count=1 $(PKG)
 
-## cover: run tests and produce a coverage report
+## cover: run tests and produce a coverage report (library packages only;
+## the runnable examples under examples/ carry no tests)
 cover:
-	$(GO) test -race -covermode=atomic -coverprofile=$(COVERFILE) $(PKG)
+	$(GO) test -race -covermode=atomic -coverprofile=$(COVERFILE) $$($(GO) list ./... | grep -v /examples/)
 	$(GO) tool cover -func=$(COVERFILE) | tail -n 1
 
 ## bench: run benchmarks
 bench:
 	$(GO) test -run=^$$ -bench=. -benchmem $(PKG)
+
+## bench-compare: comparative router benchmarks vs gin/chi/echo (separate module)
+bench-compare:
+	cd benchmarks && $(GO) test -run=^$$ -bench=. -benchmem ./...
 
 ## vet: run go vet
 vet:

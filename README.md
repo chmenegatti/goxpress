@@ -309,10 +309,39 @@ Need full control over the server? `app.Server(addr)` returns a configured
 
 ## Performance
 
+Routing hot path, in isolation (zero allocations):
+
 ```
 BenchmarkRouterStatic-12    48203124    25.40 ns/op    0 B/op    0 allocs/op
 BenchmarkRouterParam-12     35268422    37.35 ns/op    0 B/op    0 allocs/op
 ```
+
+### Comparative benchmarks
+
+End-to-end `ServeHTTP` (route match + minimal handler) against gin, chi and
+echo. Competitor dependencies live in a separate [`benchmarks/`](benchmarks)
+module so they never enter the core. Reproduce with `make bench-compare`.
+
+`linux/amd64 · 12th Gen Intel Core i7-1255U · Go 1.26`
+
+| Scenario        | Framework | ns/op | B/op | allocs/op |
+|-----------------|-----------|------:|-----:|----------:|
+| Static `/ping`  | goxpress  | 123.4 |   31 |         2 |
+|                 | gin       |  80.5 |   53 |         1 |
+|                 | chi       | 208.6 |  376 |         3 |
+|                 | echo      |  83.8 |   12 |         1 |
+| Param `/users/:id` | goxpress | 152.7 | 36 |        2 |
+|                 | gin       |  87.8 |   53 |         1 |
+|                 | chi       | 390.5 |  718 |         5 |
+|                 | echo      |  98.0 |   13 |         1 |
+| 200 routes      | goxpress  | 143.9 |   28 |         2 |
+|                 | gin       | 108.6 |   54 |         1 |
+|                 | chi       | 258.8 |  378 |         3 |
+|                 | echo      | 122.0 |   14 |         1 |
+
+goXpress comfortably outpaces chi and stays within ~1.5× of gin/echo, which
+shave an allocation by writing the response without the `fmt`-based `String`
+helper. The router itself allocates nothing (see the isolated benchmarks above).
 
 ## Examples
 
