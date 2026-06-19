@@ -29,18 +29,23 @@ type node struct {
 	priority  uint32   // number of routes registered through this node
 	nType     nodeType // node classification
 	wildChild bool     // whether the last child is a wildcard node
+
+	// matcher constrains a param node: when non-nil, a captured segment that
+	// fails it does not match the route. It is nil for unconstrained params, so
+	// the unconstrained hot path pays nothing.
+	matcher ParamMatcher
 }
 
 // addRoute registers handlers for the given path within the tree rooted at n.
 // It panics on malformed patterns or conflicts, which are programming errors
 // that must surface at startup rather than at request time.
-func (n *node) addRoute(path string, handlers []HandlerFunc) {
+func (n *node) addRoute(path string, handlers []HandlerFunc, resolve matcherResolver) {
 	fullPath := path
 	n.priority++
 
 	// Empty tree: insert the whole path as the first route.
 	if n.path == "" && len(n.children) == 0 {
-		n.insertChild(path, fullPath, handlers)
+		n.insertChild(path, fullPath, handlers, resolve)
 		n.nType = nodeRoot
 		return
 	}
@@ -119,7 +124,7 @@ walk:
 					"' conflicts with existing route in path '" + fullPath + "'")
 			}
 
-			n.insertChild(path, fullPath, handlers)
+			n.insertChild(path, fullPath, handlers, resolve)
 			return
 		}
 
@@ -134,7 +139,7 @@ walk:
 
 // insertChild grows the tree from n along path, creating static, param and
 // catch-all nodes as dictated by the wildcards it contains.
-func (n *node) insertChild(path, fullPath string, handlers []HandlerFunc) {
+func (n *node) insertChild(path, fullPath string, handlers []HandlerFunc, resolve matcherResolver) {
 	for {
 		// Locate the next wildcard segment, if any.
 		wildcard, idx, valid := findWildcard(path)
@@ -158,7 +163,8 @@ func (n *node) insertChild(path, fullPath string, handlers []HandlerFunc) {
 				path = path[idx:]
 			}
 
-			child := &node{path: wildcard, nType: nodeParam, paramName: wildcard[1:]}
+			name, matcher := parseParam(wildcard, resolve, fullPath)
+			child := &node{path: wildcard, nType: nodeParam, paramName: name, matcher: matcher}
 			n.children = []*node{child}
 			n.wildChild = true
 			n = child
@@ -258,6 +264,12 @@ walk:
 				end := 0
 				for end < len(path) && path[end] != '/' {
 					end++
+				}
+
+				// A constrained param that rejects the value does not match;
+				// the request falls through to 404.
+				if n.matcher != nil && !n.matcher(path[:end]) {
+					return routeResult{params: params}
 				}
 				params = append(params, Param{Key: n.paramName, Value: path[:end]})
 

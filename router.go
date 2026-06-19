@@ -28,6 +28,10 @@ type Router struct {
 	// order, for OpenAPI document generation.
 	routes []*Route
 
+	// paramMatchers holds custom route-parameter constraint matchers
+	// registered via Param, overriding the built-ins of the same name.
+	paramMatchers map[string]ParamMatcher
+
 	// pool recycles Context values across requests to avoid per-request
 	// allocations on the hot path.
 	pool sync.Pool
@@ -119,7 +123,7 @@ func (r *Router) Handle(method, path string, handlers ...HandlerFunc) *Route {
 		root = &node{}
 		r.trees[method] = root
 	}
-	root.addRoute(path, r.compose(handlers))
+	root.addRoute(path, r.compose(handlers), r.paramMatcher)
 
 	if c := countParams(path); c > r.maxParams {
 		r.maxParams = c

@@ -38,6 +38,8 @@ radix-tree engine, while staying **100% compatible with the standard
   WebSockets (`ws` subpackage)
 - 📑 **OpenAPI 3.1** — generate `/openapi.json` from your routes with fluent
   metadata, zero dependencies
+- 🔒 **Constrained params** — `:id|int`, `:slug|slug`, custom matchers; zero-cost
+  for unconstrained routes
 - 🛠 **Batteries included** — `middleware/` package: Logger, Recoverer,
   RequestID, RealIP, CORS, Timeout, Compress, Decompress, BasicAuth,
   SecureHeaders, RateLimit, BodyLimit — all standard-library only
@@ -94,6 +96,28 @@ Path patterns support three segment kinds:
 Unmatched paths yield `404`; a path that exists for other methods yields `405`
 with an `Allow` header. Trailing-slash mismatches redirect automatically (set
 `app.RedirectTrailingSlash = false` to disable).
+
+### Constrained parameters
+
+A `:param` may carry a `|matcher` constraint; a value the matcher rejects falls
+through to `404`. Built-ins: `int`, `uint`, `alpha`, `alnum`, `slug`, `uuid`.
+
+```go
+app.Get("/users/:id|int", getUser)        // /users/42 ✓   /users/abc → 404
+app.Get("/posts/:slug|slug", getPost)
+app.Get("/things/:id|uuid", getThing)
+```
+
+Register custom matchers with `app.Param` (overrides a built-in of the same
+name):
+
+```go
+app.Param("even", func(s string) bool { return len(s) > 0 && (s[len(s)-1]-'0')%2 == 0 })
+app.Get("/n/:n|even", handler)
+```
+
+Constraints are checked only on constrained segments, so unconstrained routes
+keep their zero-allocation hot path.
 
 `HEAD` requests without an explicit `HEAD` route are answered by the matching
 `GET` handler with the body discarded, and `OPTIONS` requests are answered with
