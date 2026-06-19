@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Typed/constrained route parameters (#8): a `:param` segment may carry a
+  `|matcher` constraint (`/users/:id|int`); a value the matcher rejects falls
+  through to 404. Built-in matchers `int`, `uint`, `alpha`, `alnum`, `slug`,
+  `uuid`, plus custom matchers via `Router.Param(name, func(string) bool)`. The
+  check runs only on constrained segments, so unconstrained routes keep their
+  zero-allocation hot path.
+
 ## [0.4.0] - 2026-06-19
 
 ### Added

@@ -51,7 +51,7 @@ func newRoute(method, path string) *Route {
 	rt := &Route{Method: method, Path: path}
 	for seg := range strings.SplitSeq(path, "/") {
 		if len(seg) > 1 && (seg[0] == ':' || seg[0] == '*') {
-			rt.pathParams = append(rt.pathParams, seg[1:])
+			rt.pathParams = append(rt.pathParams, paramName(seg[1:]))
 		}
 	}
 	return rt
@@ -175,7 +175,7 @@ func (rt *Route) openAPIPath() string {
 	segs := strings.Split(rt.Path, "/")
 	for i, s := range segs {
 		if len(s) > 1 && (s[0] == ':' || s[0] == '*') {
-			segs[i] = "{" + s[1:] + "}"
+			segs[i] = "{" + paramName(s[1:]) + "}"
 		}
 	}
 	return strings.Join(segs, "/")

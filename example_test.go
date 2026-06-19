@@ -101,6 +101,24 @@ func ExampleBindJSON() {
 	// {"name":"ada"}
 }
 
+// ExampleRouter_Param shows a constrained route parameter: only integer ids
+// match, other values fall through to 404.
+func ExampleRouter_Param() {
+	app := goxpress.New()
+	app.Get("/users/:id|int", func(c *goxpress.Context) error {
+		return c.String(http.StatusOK, "user %s", c.Param("id"))
+	})
+
+	for _, target := range []string{"/users/42", "/users/abc"} {
+		w := httptest.NewRecorder()
+		app.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		fmt.Println(target, "->", w.Code)
+	}
+	// Output:
+	// /users/42 -> 200
+	// /users/abc -> 404
+}
+
 // ExampleRouter_OpenAPI documents routes with fluent metadata and serves the
 // generated OpenAPI 3.1 spec at /openapi.json.
 func ExampleRouter_OpenAPI() {

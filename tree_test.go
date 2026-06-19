@@ -14,7 +14,7 @@ func TestTreeStaticRoutes(t *testing.T) {
 	tree := &node{}
 	routes := []string{"/", "/hi", "/contact", "/co", "/c", "/a", "/ab", "/doc/", "/doc/go_faq.html", "/doc/go1.html"}
 	for _, r := range routes {
-		tree.addRoute(r, fakeHandler())
+		tree.addRoute(r, fakeHandler(), nil)
 	}
 
 	for _, r := range routes {
@@ -38,7 +38,7 @@ func TestTreeParamRoutes(t *testing.T) {
 		"/static/:dir/:file",
 	}
 	for _, r := range routes {
-		tree.addRoute(r, fakeHandler())
+		tree.addRoute(r, fakeHandler(), nil)
 	}
 
 	tests := []struct {
@@ -69,32 +69,32 @@ func TestTreeParamRoutes(t *testing.T) {
 
 func TestTreeDuplicateRoutePanics(t *testing.T) {
 	tree := &node{}
-	tree.addRoute("/users/:id", fakeHandler())
+	tree.addRoute("/users/:id", fakeHandler(), nil)
 
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic on duplicate route registration")
 		}
 	}()
-	tree.addRoute("/users/:id", fakeHandler())
+	tree.addRoute("/users/:id", fakeHandler(), nil)
 }
 
 func TestTreeWildcardConflictPanics(t *testing.T) {
 	tree := &node{}
-	tree.addRoute("/users/:id", fakeHandler())
+	tree.addRoute("/users/:id", fakeHandler(), nil)
 
 	defer func() {
 		if recover() == nil {
 			t.Fatal("expected panic on conflicting wildcard")
 		}
 	}()
-	tree.addRoute("/users/:name", fakeHandler())
+	tree.addRoute("/users/:name", fakeHandler(), nil)
 }
 
 func TestTreeTrailingSlashRedirect(t *testing.T) {
 	tree := &node{}
-	tree.addRoute("/users", fakeHandler())
-	tree.addRoute("/posts/", fakeHandler())
+	tree.addRoute("/users", fakeHandler(), nil)
+	tree.addRoute("/posts/", fakeHandler(), nil)
 
 	if res := tree.getValue("/users/", nil); res.handlers != nil || !res.tsr {
 		t.Errorf("/users/: want tsr without handlers, got handlers=%v tsr=%v", res.handlers != nil, res.tsr)
